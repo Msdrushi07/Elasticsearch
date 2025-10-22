@@ -1,0 +1,356 @@
+Perfect ✅ Rushi — that’s an excellent approach 👏
+Let’s first master Elasticsearch 7.x operations using the RestHighLevelClient, because this is what most enterprise projects (like Deloitte, Citi, Travelers, etc.) still use internally.
+
+We’ll go step-by-step and cover all major operations:
+🧱 Index (create/update), 🔍 Get, 🔄 Update (partial), ❌ Delete, and 🔎 Search — just like in real projects.
+
+
+---
+
+🚀 Project Overview (Elasticsearch 7.x)
+
+Tech stack:
+
+Java 17+
+
+Spring Boot 2.7.x (or 3.x with ES 7 client)
+
+Elasticsearch 7.x server
+
+Maven
+
+
+
+---
+
+🧩 1️⃣ pom.xml
+
+Add these dependencies:
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- Elasticsearch High-Level REST Client -->
+    <dependency>
+        <groupId>org.elasticsearch.client</groupId>
+        <artifactId>elasticsearch-rest-high-level-client</artifactId>
+        <version>7.17.5</version>
+    </dependency>
+
+    <dependency>
+        <groupId>org.apache.httpcomponents</groupId>
+        <artifactId>httpclient</artifactId>
+        <version>4.5.13</version>
+    </dependency>
+
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+    </dependency>
+</dependencies>
+
+
+---
+
+⚙️ 2️⃣ Configuration — ElasticsearchConfig.java
+
+package com.elasticsearch.config;
+
+import org.apache.http.HttpHost;
+import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class ElasticsearchConfig {
+
+    @Bean(destroyMethod = "close")
+    public RestHighLevelClient restHighLevelClient() {
+        return new RestHighLevelClient(
+                RestClient.builder(new HttpHost("localhost", 9200, "http"))
+        );
+    }
+}
+
+
+---
+
+🧱 3️⃣ Model — Employee.java
+
+package com.elasticsearch.entity;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import java.util.List;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class Employee {
+    private String id;
+    private String name;
+    private String designation;
+    private List<String> skills;
+}
+
+
+---
+
+🔧 4️⃣ Utility — ESUtil.java
+
+This is where all core Elasticsearch 7.x operations live 👇
+
+package com.elasticsearch.util;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.elasticsearch.action.delete.DeleteRequest;
+import org.elasticsearch.action.delete.DeleteResponse;
+import org.elasticsearch.action.get.GetRequest;
+import org.elasticsearch.action.get.GetResponse;
+import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.action.index.IndexResponse;
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.update.UpdateRequest;
+import org.elasticsearch.action.update.UpdateResponse;
+import org.elasticsearch.client.RequestOptions;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.index.query.MatchQueryBuilder;
+import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.util.*;
+import com.elasticsearch.entity.Employee;
+
+@Component
+public class ESUtil {
+
+    @Autowired
+    private RestHighLevelClient client;
+
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    private static final String INDEX = "employees";
+
+    // ✅ Index (Create/Update)
+    public String indexDocument(Employee employee) throws IOException {
+        String json = mapper.writeValueAsString(employee);
+        IndexRequest request = new IndexRequest(INDEX)
+                .id(employee.getId())
+                .source(json, XContentType.JSON);
+
+        IndexResponse response = client.index(request, RequestOptions.DEFAULT);
+        return response.getResult().name();
+    }
+
+    // 🔍 Get
+    public Employee getDocument(String id) throws IOException {
+        GetRequest getRequest = new GetRequest(INDEX, id);
+        GetResponse getResponse = client.get(getRequest, RequestOptions.DEFAULT);
+
+        if (getResponse.isExists()) {
+            return mapper.readValue(getResponse.getSourceAsString(), Employee.class);
+        } else {
+            return null;
+        }
+    }
+
+    // 🔄 Update (Partial)
+    public String updateDocument(String id, Map<String, Object> updateMap) throws IOException {
+        UpdateRequest request = new UpdateRequest(INDEX, id)
+                .doc(updateMap);
+        UpdateResponse response = client.update(request, RequestOptions.DEFAULT);
+        return response.getResult().name();
+    }
+
+    // ❌ Delete
+    public String deleteDocument(String id) throws IOException {
+        DeleteRequest request = new DeleteRequest(INDEX, id);
+        DeleteResponse response = client.delete(request, RequestOptions.DEFAULT);
+        return response.getResult().name();
+    }
+
+    // 🔎 Search (match)
+    public List<Employee> searchByField(String field, String value) throws IOException {
+        SearchRequest searchRequest = new SearchRequest(INDEX);
+        SearchSourceBuilder builder = new SearchSourceBuilder();
+        builder.query(new MatchQueryBuilder(field, value));
+        searchRequest.source(builder);
+
+        SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
+
+        List<Employee> employees = new ArrayList<>();
+        for (SearchHit hit : response.getHits()) {
+            Employee e = mapper.readValue(hit.getSourceAsString(), Employee.class);
+            employees.add(e);
+        }
+        return employees;
+    }
+}
+
+
+---
+
+💼 5️⃣ Service — EmployeeService.java
+
+package com.elasticsearch.service;
+
+import com.elasticsearch.entity.Employee;
+import com.elasticsearch.util.ESUtil;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+
+@Service
+public class EmployeeService {
+
+    @Autowired
+    private ESUtil esUtil;
+
+    public String saveEmployee(Employee emp) throws IOException {
+        return esUtil.indexDocument(emp);
+    }
+
+    public Employee getEmployee(String id) throws IOException {
+        return esUtil.getDocument(id);
+    }
+
+    public String updateEmployee(String id, Map<String, Object> fields) throws IOException {
+        return esUtil.updateDocument(id, fields);
+    }
+
+    public String deleteEmployee(String id) throws IOException {
+        return esUtil.deleteDocument(id);
+    }
+
+    public List<Employee> searchByName(String name) throws IOException {
+        return esUtil.searchByField("name", name);
+    }
+}
+
+
+---
+
+🌐 6️⃣ Controller — EmployeeController.java
+
+package com.elasticsearch.controller;
+
+import com.elasticsearch.entity.Employee;
+import com.elasticsearch.service.EmployeeService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/employees")
+public class EmployeeController {
+
+    @Autowired
+    private EmployeeService service;
+
+    @PostMapping
+    public String save(@RequestBody Employee emp) throws IOException {
+        return service.saveEmployee(emp);
+    }
+
+    @GetMapping("/{id}")
+    public Employee get(@PathVariable String id) throws IOException {
+        return service.getEmployee(id);
+    }
+
+    @PatchMapping("/{id}")
+    public String update(@PathVariable String id, @RequestBody Map<String, Object> fields) throws IOException {
+        return service.updateEmployee(id, fields);
+    }
+
+    @DeleteMapping("/{id}")
+    public String delete(@PathVariable String id) throws IOException {
+        return service.deleteEmployee(id);
+    }
+
+    @GetMapping("/search")
+    public List<Employee> search(@RequestParam String name) throws IOException {
+        return service.searchByName(name);
+    }
+}
+
+
+---
+
+🧪 7️⃣ Test with Postman or curl
+
+➕ Index
+
+POST http://localhost:8080/api/employees
+{
+  "id": "1",
+  "name": "Rushi",
+  "designation": "Developer",
+  "skills": ["Spring Boot", "Docker"]
+}
+
+🔍 Get
+
+GET http://localhost:8080/api/employees/1
+
+🔄 Update
+
+PATCH http://localhost:8080/api/employees/1
+{
+  "designation": "Senior Developer"
+}
+
+❌ Delete
+
+DELETE http://localhost:8080/api/employees/1
+
+🔎 Search
+
+GET http://localhost:8080/api/employees/search?name=Rushi
+
+
+---
+
+🧭 Summary
+
+Operation	API Used	Method
+
+Index	IndexRequest	client.index()
+Get	GetRequest	client.get()
+Update	UpdateRequest	client.update()
+Delete	DeleteRequest	client.delete()
+Search	SearchRequest + MatchQueryBuilder	client.search()
+
+
+
+---
+
+💡 Next Steps
+
+Once you’re comfortable with this:
+
+I’ll show you how to add fuzzy search, autocomplete, and bulk operations (real-world ES 7.x use cases).
+
+Then we’ll migrate this to Elasticsearch 8.x using the new ElasticsearchClient.
+
+
+
+---
+
+Would you like me to extend this same ES 7.x project with fuzzy search + prefix search + bulk insert/search next? That’s usually the next phase after CRUD in enterprise setups.
+
