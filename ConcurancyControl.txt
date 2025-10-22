@@ -1,0 +1,23 @@
+// Step 1: Get document first (to retrieve seqNo and primaryTerm)
+GetRequest getRequest = new GetRequest("employees", "1");
+GetResponse getResponse = client.get(getRequest, RequestOptions.DEFAULT);
+
+long seq = getResponse.getSeqNo();
+long priTerm = getResponse.getPrimaryTerm();
+
+// Step 2: Prepare update data
+Map<String, Object> updateMap = new HashMap<>();
+updateMap.put("designation", "Senior Developer");
+updateMap.put("skills", Arrays.asList("Spring Boot", "Docker", "Kubernetes"));
+
+// Step 3: Prepare update request
+UpdateRequest req = new UpdateRequest();
+req.index("employees");
+req.id("1");
+req.doc(updateMap);
+req.setIfSeqNo(seq);
+req.setIfPrimaryTerm(priTerm);
+
+// Step 4: Execute update
+UpdateResponse response = client.update(req, RequestOptions.DEFAULT);
+System.out.println(response.getResult()); // UPDATED
